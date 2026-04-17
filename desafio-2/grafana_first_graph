@@ -1,0 +1,19 @@
+WITH metricas AS (
+    SELECT 
+        strftime('%Y-%m-%dT%H:%M:%SZ', timestamp) as time, 
+        
+        status as metric, -- ⬅️ É AQUI QUE A PALAVRA "METRIC" NASCE!
+        
+        count,
+        AVG(count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW) as media_15m,
+        AVG(count*count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW) - 
+        POWER(AVG(count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW), 2) as variancia
+    FROM transacoes
+    WHERE status IN (${status_filtro:singlequote})
+)
+SELECT 
+    time,
+    metric, -- ⬅️ E ela é entregue ao Grafana aqui!
+    (count - media_15m) / NULLIF(SQRT(ABS(variancia)), 0) as "Z-Score"
+FROM metricas
+ORDER BY time ASC;
