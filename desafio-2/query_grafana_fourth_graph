@@ -1,0 +1,24 @@
+WITH dados_preparados AS (
+    SELECT 
+        strftime('%Y-%m-%dT%H:%M:00Z', substr(timestamp, 1, 19)) as time,
+        'Código ' || PRINTF('%02d', auth_code) as metric,
+        auth_code, -- Mantemos o código original para a ordenação
+        count
+    FROM historico_codigos
+    WHERE timestamp IS NOT NULL
+)
+SELECT 
+    time,
+    metric,
+    SUM(count) as "Volume"
+FROM dados_preparados
+GROUP BY time, metric
+ORDER BY 
+    time ASC, 
+    -- Criamos uma regra de prioridade: 00 primeiro, 59 segundo, o resto depois
+    CASE 
+        WHEN auth_code = '00' THEN 1 
+        WHEN auth_code = '59' THEN 2 
+        WHEN auth_code = '51' THEN 3 
+        ELSE 4 
+    END ASC;
