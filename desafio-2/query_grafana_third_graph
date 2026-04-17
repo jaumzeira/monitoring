@@ -1,0 +1,7 @@
+SELECT 
+    -- O '%02d' diz ao banco: "use 2 dígitos e preencha com zero se faltar"
+    'Volume Total Código ' || PRINTF('%02d', auth_code) as "Nome_da_Fatia",
+    SUM(count) as "Valor"
+FROM historico_codigos
+GROUP BY auth_code
+ORDER BY "Valor" DESC;
