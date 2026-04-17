@@ -1,0 +1,20 @@
+WITH metricas AS (
+    SELECT 
+        strftime('%Y-%m-%dT%H:%M:%SZ', timestamp) as time, 
+        
+        status as metric,
+        
+        count,
+        AVG(count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW) as media_15m,
+        AVG(count*count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW) - 
+        POWER(AVG(count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW), 2) as variancia
+    FROM transacoes
+    WHERE status IN (${status_filtro:singlequote})
+)
+SELECT 
+    time,
+    metric, 
+    count as "Volume Real",
+    media_15m as "Média Móvel"
+FROM metricas
+ORDER BY time ASC;
