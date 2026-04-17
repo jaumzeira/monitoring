@@ -1,0 +1,141 @@
+import pandas as pd
+import matplotlib.pyplot as plt
+import sqlite3
+
+# URLs dos arquivos (Raw do GitHub)
+url_1 = "https://raw.githubusercontent.com/thais-menezes/monitoring/main/checkout_1.csv"
+url_2 = "https://raw.githubusercontent.com/thais-menezes/monitoring/main/checkout_2.csv"
+
+
+def analise_monitoramento_completo():
+    print("--- [START] Iniciando Pipeline de Monitoramento de 72 Horas ---")
+
+    # =====================================================================
+    # 1. CARREGAMENTO E CONSOLIDAÇÃO DA TIMELINE (Rastreabilidade)
+    # =====================================================================
+    df1 = pd.read_csv(url_1)
+    df2 = pd.read_csv(url_2)
+
+    df_tri = pd.DataFrame({
+        'time': df2['time'],
+        'anteontem (t1_yesterday)': df1['yesterday'],
+        'ontem (t2_yesterday)': df2['yesterday'],
+        'hoje (t2_today)': df2['today'],
+        'baseline': df2['same_day_last_week']
+    })
+
+    # =====================================================================
+    # 2. CONFIGURAÇÃO DO BANCO DE DADOS EM MEMÓRIA
+    # =====================================================================
+    conn = sqlite3.connect(':memory:')
+    df_tri.to_sql('monitoramento', conn, index=False)
+
+    # Configuração para o Pandas exibir a tabela completa no terminal
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 1000)
+
+    # =====================================================================
+    # 3. ETAPA 1: MODO LOGGING (Análise Crua / Visão de Banco de Dados)
+    # =====================================================================
+    # Retorna TODAS as quedas maiores que 25%, incluindo as da madrugada.
+    query_logging = """
+                    SELECT
+                        time as Hora, "anteontem (t1_yesterday)", "ontem (t2_yesterday)", "hoje (t2_today)", baseline as Media_Ref, ROUND((("hoje (t2_today)" - baseline) * 100.0 / baseline), 2) as Variacao_Hoje_vs_Media
+                    FROM monitoramento
+                    WHERE "hoje (t2_today)" < (baseline * 0.75)
+                    ORDER BY time \
+                    """
+    alertas_logging = pd.read_sql_query(query_logging, conn)
+
+    print("\n--- [ETAPA 1:] TODAS AS ANOMALIAS DETECTADAS (INCLUINDO RUÍDO) ---")
+    print(alertas_logging if not alertas_logging.empty else "Nenhuma anomalia matemática detectada.")
+
+    # =====================================================================
+    # 4. ETAPA 2: MODO ALERTING (Regra de Negócio / Visão de Produto)
+    # =====================================================================
+    # Aplica o filtro baseline >= 10 para evitar alarmes falsos de baixo volume.
+    query_alerting = """
+                     SELECT
+                         time as Hora, "anteontem (t1_yesterday)", "ontem (t2_yesterday)", "hoje (t2_today)", baseline as Media_Ref, ROUND((("hoje (t2_today)" - baseline) * 100.0 / baseline), 2) as Variacao_Hoje_vs_Media
+                     FROM monitoramento
+                     WHERE "hoje (t2_today)" \
+                         < (baseline * 0.75)
+                       AND baseline >= 10
+                     ORDER BY time \
+                     """
+    alertas_negocio = pd.read_sql_query(query_alerting, conn)
+
+    print("\n--- [ETAPA 2:] FILTRO DE PREVENÇÃO DE FALSOS POSITIVOS APLICADO (Média >= 10) ---")
+    print(alertas_negocio if not alertas_negocio.empty else "Sistema operando dentro da normalidade.")
+
+    # =====================================================================
+    # 5. PREPARAÇÃO DE DADOS PARA O GRÁFICO
+    # =====================================================================
+    df_tri['pct_queda'] = ((df_tri['baseline'] - df_tri['hoje (t2_today)']) / df_tri['baseline']) * 100
+
+    # O gráfico reflete a Etapa 2 (Alerting Real)
+    alertas_grafico = df_tri[(df_tri['pct_queda'] >= 25) & (df_tri['baseline'] >= 10)]
+
+    # =====================================================================
+    # 6. VISUALIZAÇÃO PROFISSIONAL
+    # =====================================================================
+    plt.figure(figsize=(16, 8), dpi=100)
+    plt.rcParams['axes.facecolor'] = '#f8f9fa'
+
+    # Plotando o histórico base
+    plt.plot(df_tri['time'], df_tri['anteontem (t1_yesterday)'], label='Anteontem (t1_yesterday)', color='#adb5bd',
+             alpha=0.6, linestyle=':', linewidth=2)
+    plt.plot(df_tri['time'], df_tri['ontem (t2_yesterday)'], label='Ontem (t2_yesterday)', color='#6c757d', alpha=0.8,
+             linestyle='--', linewidth=2)
+    plt.plot(df_tri['time'], df_tri['baseline'], label='Média de Referência', color='#2a9d8f', linewidth=2.5)
+
+    # Destaque para o dia de hoje
+    plt.plot(df_tri['time'], df_tri['hoje (t2_today)'], label='HOJE (Monitoramento)', color='#d00000', linewidth=3.5,
+             marker='o', markersize=5)
+
+    # Área sombreada (Impacto/Gap)
+    plt.fill_between(df_tri['time'], df_tri['hoje (t2_today)'], df_tri['baseline'],
+                     where=(df_tri['hoje (t2_today)'] < df_tri['baseline']),
+                     color='#d00000', alpha=0.15, label='Volume Perdido (Gap)')
+
+    # Anotação Dinâmica para o Alerta de Negócio
+    if not alertas_grafico.empty:
+        primeiro_indice = alertas_grafico.index[0]
+        hora_inicio = df_tri.loc[primeiro_indice, 'time']
+        valor_inicio = df_tri.loc[primeiro_indice, 'hoje (t2_today)']
+        pct_exata = df_tri.loc[primeiro_indice, 'pct_queda']
+
+        texto_alerta = f'[!] ALERTA DE INCIDENTE\n{hora_inicio} (Queda: {pct_exata:.1f}%)'
+
+        plt.annotate(texto_alerta,
+                     xy=(primeiro_indice, valor_inicio),
+                     xytext=(primeiro_indice, valor_inicio + (df_tri['baseline'].max() * 0.15)),
+                     arrowprops=dict(facecolor='#d00000', shrink=0.05, width=2, headwidth=8),
+                     fontsize=11, fontweight='bold', color='#d00000', ha='center',
+                     bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="#d00000", lw=2))
+
+    # Formatação do Gráfico
+    plt.title('Monitoramento POS: Análise Comparativa de 72h e Detecção de Anomalias', fontsize=18, fontweight='bold',
+              pad=20, color='#212529')
+    plt.xlabel('Janela de Tempo (Horas)', fontsize=12, fontweight='bold', color='#495057')
+    plt.ylabel('Volume de Vendas POS (Qtd)', fontsize=12, fontweight='bold', color='#495057')
+    plt.xticks(rotation=45)
+
+    # Limpeza visual (Design minimalista)
+    plt.grid(True, axis='y', linestyle='-', alpha=0.7, color='white')
+    plt.grid(True, axis='x', linestyle='--', alpha=0.3, color='#ced4da')
+    plt.gca().spines['top'].set_visible(False)
+    plt.gca().spines['right'].set_visible(False)
+    plt.gca().spines['left'].set_color('#ced4da')
+    plt.gca().spines['bottom'].set_color('#ced4da')
+
+    plt.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='#dee2e6', fontsize=11)
+    plt.tight_layout()
+
+    plt.savefig('dashboard_pipeline_cloudwalk.png', dpi=300)
+    print("\n--- [SUCCESS] Dashboard gerado e salvo como 'dashboard_pipeline_cloudwalk.png'. ---")
+    plt.show()
+
+
+if __name__ == "__main__":
+    analise_monitoramento_completo()
