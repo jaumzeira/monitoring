@@ -1,0 +1,17 @@
+WITH metricas AS (
+    SELECT 
+        strftime('%Y-%m-%dT%H:%M:00Z', substr(timestamp, 1, 19)) as time, 
+        status as label,
+        count,
+        AVG(count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW) as media_15m,
+        AVG(count*count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW) - 
+        POWER(AVG(count) OVER (PARTITION BY status ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW), 2) as variancia
+    FROM transacoes
+    WHERE status IN ('failed', 'denied', 'reversed')
+)
+SELECT 
+    time,
+    label, 
+    COALESCE((count - media_15m) / NULLIF(SQRT(ABS(variancia)), 0), 0) as z_score
+FROM metricas
+ORDER BY time ASC;
