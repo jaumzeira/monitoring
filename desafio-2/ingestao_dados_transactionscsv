@@ -1,0 +1,29 @@
+import pandas as pd
+import sqlite3
+import os
+
+# 1. DEFINIÇÃO DO CAMINHO (Onde o banco será salvo)
+# Usamos o caminho absoluto para facilitar a vida do Grafana depois
+caminho_projeto = os.path.dirname(os.path.abspath(__file__))
+caminho_db = os.path.join(caminho_projeto, "monitoramento.db")
+
+print(f"🚀 Iniciando processo de ingestão...")
+
+try:
+    # 2. EXTRAÇÃO: Lendo os dados do GitHub
+    url_transacoes = "https://raw.githubusercontent.com/everton-cw/monitoring_test/main/transactions.csv"
+    df = pd.read_csv(url_transacoes)
+
+    # 3. TRANSFORMAÇÃO: Ajustando o formato de data
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    # 4. CARGA: Salvando no SQLite
+    conn = sqlite3.connect(caminho_db)
+    df.to_sql('transacoes', conn, if_exists='replace', index=False)
+    conn.close()
+
+    print(f"✅ SUCESSO! O arquivo foi criado em: {caminho_db}")
+    print("Agora você pode usar este caminho no Data Source do Grafana.")
+
+except Exception as e:
+    print(f"❌ Erro na ingestão: {e}")
