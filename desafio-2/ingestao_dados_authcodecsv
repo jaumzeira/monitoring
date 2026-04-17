@@ -1,0 +1,31 @@
+import pandas as pd
+import sqlite3
+import os
+
+# 1. DEFINIÇÃO DO CAMINHO (Onde o seu banco local está)
+caminho_projeto = os.path.dirname(os.path.abspath(__file__))
+caminho_db = os.path.join(caminho_projeto, "monitoramento.db")
+
+print(f"🚀 Iniciando a ingestão dos códigos de autorização via nuvem...")
+
+try:
+    # 2. EXTRAÇÃO: Lendo diretamente do GitHub (Usando a URL RAW)
+    url_codigos = "https://raw.githubusercontent.com/everton-cw/monitoring_test/main/transactions_auth_codes.csv"
+
+    # O Pandas faz a requisição web e carrega os dados em memória
+    df = pd.read_csv(url_codigos)
+
+    # 3. TRANSFORMAÇÃO: Garantindo o formato de data ISO para o Grafana
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+    # 4. CARGA: Salvando em uma nova tabela chamada 'historico_codigos'
+    conn = sqlite3.connect(caminho_db)
+    df.to_sql('historico_codigos', conn, if_exists='replace', index=False)
+    conn.close()
+
+    print(f"✅ SUCESSO! A tabela 'historico_codigos' foi criada/atualizada em: {caminho_db}")
+    print(f"Total de linhas extraídas do GitHub: {len(df)}")
+    print("O banco está pronto para o gráfico de pizza do Grafana.")
+
+except Exception as e:
+    print(f"❌ Erro na ingestão: {e}")
