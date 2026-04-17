@@ -42,4 +42,5 @@ Uso de IA: Este projeto testou os limites da tecnologia. Pela primeira vez, a co
 
 
 📄 Apresentação Completa
+
 Para uma visão estratégica das decisões de arquitetura e prints dos resultados (Grafana/Discord), acesse o arquivo: Monitoring analyst test.pdf.
